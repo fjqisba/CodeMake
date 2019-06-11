@@ -55,6 +55,8 @@ public:
 
 	UINT CallLevel=0;
 
+
+
 	map<ULONG, BOOL> m_block;
 
 	map<string, string> m_FuncOk;  //保存函数,key为函数名称,value为函数文本

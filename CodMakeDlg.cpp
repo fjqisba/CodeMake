@@ -524,12 +524,6 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 	vector<string> Original_array;  //原始命令数组
 	vector<string> Named_array;    //处理自定义数据类型
 
-	CString	strWorkPath;
-	WCHAR wcsCurPath[MAX_PATH] = { 0 };
-	GetCurrentDirectory(MAX_PATH, wcsCurPath);
-	strWorkPath = wcsCurPath;
-	strWorkPath += L"\\"; strWorkPath += strGuid;
-	CreateDirectory(strWorkPath, NULL);
 
 	PCMD_INFO  pCmd_Info = pLibInfo->m_pBeginCmdInfo;
 
@@ -554,88 +548,21 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 
 	PCMD_INFO  pCmd = pLibInfo->m_pBeginCmdInfo;
 	LPINT pFunc = (LPINT)pLibInfo->m_pCmdsFunc;
-	//————————————————————————————————————
-	//                     生成一份源码
 
-	/*string ECODE;
-	ECODE.append(".局部变量 整数, 整数型\r\n");
-	ECODE.append(".局部变量 文本, 文本型\r\n");
-	ECODE.append(".局部变量 字节集, 字节集\r\n");
-	for (int i = 0;i < pLibInfo->m_nCmdCount;i++) {
-		if (*pFunc == NULL) {           //过滤空函数,例如 如果命令
-			pCmd++;continue;
-		}
-		if (pCmd->m_wState == 32772) { //无效命令,从一些函数的属性中分析得出的结果
-			pCmd++;continue;
-		}
-
-		PARG_INFO arg = pCmd->m_pBeginArgInfo;
-		string Efunc = (char*)pCmd->m_szName;
-		Efunc = Efunc + '(';
-		for (int n = 0;n < pCmd->m_nArgCount;n++) {
-			switch (arg->m_dtDataType)
-			{
-			case 0x80000000:   //通用型
-				Efunc.append("整数,");
-				break;
-			case 0x80000005:   //字节集
-				Efunc.append("字节集,");
-				break;
-			case 0x80000006:   //子程序指针
-				Efunc.append("&子程序,");
-				break;
-			case 0x80000301:   //整数型
-				Efunc.append("整数,");
-				break;
-			case 0x80000004:   //文本型
-				Efunc.append("文本,");
-				break;
-			case 0x80000002:   //逻辑型
-				Efunc.append("真,");
-				break;
-			default:
-				DebugMessage("%s-%X", pCmd->m_szName, arg->m_dtDataType);
-				break;
-			}
-			arg++;
-		}
-		if (Efunc[Efunc.length() - 1] == ',') {
-			Efunc.erase(Efunc.length() - 1);
-		}
-		
-		Efunc = Efunc + ')';
-		DebugMessage("%s", Efunc.c_str());
-		ECODE.append(Efunc + "\r\n");
-		pCmd++;
-	}
-
-	ECODE.append(".子程序 子程序\r\n");
-
-	//置入剪辑版
-	HGLOBAL hClip;
-	if (OpenClipboard()) {
-		EmptyClipboard();
-		hClip = GlobalAlloc(GMEM_MOVEABLE, ECODE.length() + 1);
-		char *buff;
-		buff = (char*)GlobalLock(hClip);	//锁定内存
-		strcpy(buff, ECODE.c_str());
-		GlobalUnlock(hClip);
-		SetClipboardData(CF_TEXT, hClip);
-		CloseClipboard();
-	}
-	return;*/
-	
-	//————————————————————————————————————
 	GenerateRelocationMap((unsigned char*)hLib, 0);  //生成一份重定位地址表
-
 	GenerateIATMap((unsigned char*)hLib);   //生成一份IAT表
 
 	DebugMessage("> 开始生成特征库===========================");
 	//————————————————————————————————————
 	
-	CString strTargetFile = strWorkPath; strTargetFile += L"\\";
-	strTargetFile += strLibVer;
-	strTargetFile += L".Esig";
+	CString	strTargetFile;
+	WCHAR wcsCurPath[MAX_PATH] = { 0 };
+	GetCurrentDirectory(MAX_PATH, wcsCurPath);
+
+	strTargetFile = wcsCurPath;
+	strTargetFile += L"\\";
+	strTargetFile += A2W((char*)pLibInfo->m_szName);
+	strTargetFile += L".esig";
 
 	hFile = CreateFile(strTargetFile, GENERIC_WRITE, FILE_SHARE_WRITE, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
 	if (hFile == INVALID_HANDLE_VALUE)
@@ -644,6 +571,24 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 		return;
 	}
 
+	string PMET = "******Config******\r\n";
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+
+	PMET = "Name=";
+	PMET.append((char*)pLibInfo->m_szName);
+	PMET.append("\r\n");
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+
+	PMET = "Description=";
+	PMET.append((char*)pLibInfo->m_szGuid);
+	PMET.append("\r\n");
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+
+	PMET = "******Config_End******\r\n";
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+
+	PMET = "*****SubFunc*****\r\n";
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
 	for (int i = 0; i < pLibInfo->m_nCmdCount; i++)
 	{
 		if (*pFunc == NULL){           //过滤空函数,例如 如果命令
@@ -657,6 +602,7 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 		string FuncText;
 
 		m_block.clear();
+
 		Findprocend(*pFunc, FuncText);
 
 		m_FuncOk[FuncName]= FuncText;
@@ -666,17 +612,25 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 		pCmd++; pFunc++;
 	}
 
+
 	DebugMessage("生成完毕!命令有效数为:%d",m_FuncOk.size());	
 
-	//—————————写入文件————————————————
-	WriteFile(hFile, "******\r\n", 8, &dwWritten, NULL);
+	PMET = "*****SubFunc_End*****\r\n";
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+	//—————————写入主函数————————————————
 	
+	PMET = "***Func***\r\n";
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+
 	map<string, string>::iterator it;
 	it = m_FuncOk.begin();
 	while (it != m_FuncOk.end()) {
 		WriteFile(hFile, (it->first + ":" + it->second + "\r\n").c_str(), it->first.length() + 3 + it->second.length(), &dwWritten, NULL);
 		it++;
 	}
+
+	PMET = "***Func_End***";
+	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
 
 	CloseHandle(hFile);
 		
