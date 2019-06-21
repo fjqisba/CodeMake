@@ -11,6 +11,7 @@
 Debug/
 ipch/
 Release/
+*.esig
 
 # Precompiled Headers
 *.gch

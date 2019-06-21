@@ -571,7 +571,7 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 		return;
 	}
 
-	string PMET = "******Config******\r\n";
+	string PMET = "******Config******\r\n";		//PMET意思就是TEMP
 	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
 
 	PMET = "Name=";
@@ -583,6 +583,24 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 	PMET.append((char*)pLibInfo->m_szGuid);
 	PMET.append("\r\n");
 	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+
+	BOOL IsAligned = TRUE;
+	for (int i = 0; i < pLibInfo->m_nCmdCount; i++)
+	{
+		if (*pFunc << 28 != 0) {
+			IsAligned = FALSE;
+			break;
+		}
+		pFunc++;
+	}
+
+	if (IsAligned) {
+		PMET = "IsAligned=true";
+		PMET.append("\r\n");
+		WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
+	}
+
+	pFunc = (LPINT)pLibInfo->m_pCmdsFunc;
 
 	PMET = "******Config_End******\r\n";
 	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
@@ -597,6 +615,7 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 		if (pCmd->m_wState == 32772) { //无效命令,从一些函数的属性中分析得出的结果
 			pCmd++;pFunc++;continue;
 		}
+
 
 		string FuncName = Named_array[i];
 		string FuncText;
