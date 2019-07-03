@@ -74,6 +74,7 @@ void CCodMakeDlg::DoDataExchange(CDataExchange* pDX)
 	CDialog::DoDataExchange(pDX);
 	DDX_Control(pDX, IDC_LIST1, m_output);
 	DDX_Control(pDX, IDC_STATIC1, m_libname);
+	DDX_Control(pDX, IDC_CHECK1, m_checksource);
 }
 
 BEGIN_MESSAGE_MAP(CCodMakeDlg, CDialog)
@@ -119,10 +120,11 @@ BOOL CCodMakeDlg::OnInitDialog()
 	
 
 	char bufBeaInfo[128] = { 0 };
-	wsprintfA(bufBeaInfo, "CodeMake3.0  BeaEngineVersion = %s",BeaEngineVersion());
+	wsprintfA(bufBeaInfo, "CodeMake4.0  BeaEngineVersion = %s",BeaEngineVersion());
 
 	SetWindowTextA(m_hWnd,bufBeaInfo);
 
+	m_checksource.SetCheck(1);
 	return TRUE;  // ³ý·Ç½«½¹µãÉèÖÃµ½¿Ø¼þ£¬·ñÔò·µ»Ø TRUE
 }
 
@@ -309,6 +311,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 
 	ULONG MaxAddr = 0;
 
+	UINT SigLen = 0;	//ÓÃÀ´ÏÞ¶¨º¯ÊýµÄ×Ö½ÚÊýÄ¿Îª128×Ö½Ú
 	for (;;) {
 		int len = Disasm(&asmcode);
 
@@ -316,6 +319,11 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 			break;
 		}
 
+		if (SigLen >= 128) {
+			CallLevel = CallLevel - 1;
+			return 1;
+		}
+		
 		for (int n = 0;n < len;n++) {
 			m_block[asmcode.EIP + n] = true;    //ÒÑ¾­·ÖÎö¹ýµÄ´úÂë¿é
 		}
@@ -323,6 +331,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 		if (m_relocation[asmcode.EIP]) {	//µÚÒ»¸ö×Ö½Ú¾ÍÊÇÖØ¶¨Î»,ÕâÊÇ²»¿ÉÄÜµÄ,ËµÃ÷°ÑÊý¾Ýµ±×ö´úÂë´¦ÀíÁË
 			FuncText.append("????????");
 			asmcode.EIP = asmcode.EIP + 4;
+			SigLen = SigLen + 4;
 			continue;
 		}
 
@@ -332,11 +341,13 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 			if (offset != -1) {								 //´æÔÚÖØ¶¨Î»ÔòÄ£ºý´¦ÀíÖØ¶¨Î»×Ö½Ú
 				if (strcmp(asmcode.Instruction.Mnemonic,"jmp ")==0 && !m_import[asmcode.Argument1.Memory.Displacement].empty()) {        //jmpÀàÐÍIATÌø×ª
 					FuncText.append("[" + m_import[asmcode.Argument1.Memory.Displacement] + "]");
+					SigLen = SigLen + 6;
 					CallLevel = CallLevel - 1;
 					return 1;
 				}
 				if (strcmp(asmcode.Instruction.Mnemonic, "call ") == 0 && !m_import[asmcode.Argument1.Memory.Displacement].empty()) {	 //callÀàÐÍIATÌø×ª
 					FuncText.append("<[" + m_import[asmcode.Argument1.Memory.Displacement] + "]>");
+					SigLen = SigLen + 6;
 					asmcode.EIP = asmcode.EIP + len;
 					continue;
 				}
@@ -346,15 +357,18 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 					for (int n = 0;n < 16;n++) {
 						temp[(offset * 2) + n] = 0x3F;
 					}
+					SigLen = SigLen + 8;
 				}
 				else
 				{
 					for (int n = 0;n < 8;n++) {
 						temp[(offset * 2) + n] = 0x3F;
 					}
+					SigLen = SigLen + 4;
 				}
 				
 				FuncText.append(temp);
+				
 				asmcode.EIP = asmcode.EIP + len;
 				continue;
 			}
@@ -363,10 +377,12 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 					if ((FuncStartAddr > asmcode.Instruction.AddrValue || asmcode.Instruction.AddrValue > MaxAddr) && m_block[asmcode.Instruction.AddrValue] == false && abs((long)(asmcode.Instruction.AddrValue-asmcode.EIP))>5) {
 						if (asmcode.Instruction.AddrValue < (ULONG)hLib || asmcode.Instruction.AddrValue >= (ULONG)hLib + SectionSize) {  //Òì³£»ã±à»òÕßVMP´úÂë?
 							FuncText.append("E9????????");
+							SigLen = SigLen + 5;
 							CallLevel = CallLevel - 1;
 							return 1;
 						}
 						FuncText.append("-->");
+						SigLen = SigLen + 5;
 						MaxAddr = 0;
 						asmcode.EIP = asmcode.Instruction.AddrValue;
 					}
@@ -375,6 +391,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 						ReadHex(asmcode.EIP, len, temp);
 						FuncText.append(temp);
 						asmcode.EIP = asmcode.EIP + len;
+						SigLen = SigLen + len;
 					}
 					continue;
 				}
@@ -382,6 +399,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 				{
 					if (CallLevel >= CALL_LEVEL){  //Ä¬ÈÏÏÞ¶¨Îª3²ã,³¬¹ý3²ãµÄCALL½«²»ÔÙ×·×Ù,È«²¿»¯ÎªE8 ?? ?? ?? ??
 						FuncText.append("E8????????");
+						SigLen = SigLen + 5;
 						asmcode.EIP = asmcode.EIP + len;
 						continue;
 					}
@@ -393,6 +411,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 						WriteFile(hFile, (calladdr + ":" + calltext + "\r\n").c_str(), calladdr.length() + 3 + calltext.length(), &dwWritten, NULL);
 					}
 					FuncText.append("<" + calladdr + ">");
+					SigLen = SigLen + 5;
 					asmcode.EIP = asmcode.EIP + len;
 					continue;
 				}
@@ -402,6 +421,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 					ReadHex(asmcode.EIP, len, temp);
 					FuncText.append(temp);
 					asmcode.EIP = asmcode.EIP + len;
+					SigLen = SigLen + len;
 					continue;
 				}
 			}
@@ -410,6 +430,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 				ReadHex(asmcode.EIP, len, temp);
 				FuncText.append(temp);
 				asmcode.EIP = asmcode.EIP + len;
+				SigLen = SigLen + len;
 				continue;
 			}
 		}
@@ -425,6 +446,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 				ReadHex(asmcode.EIP, len, temp);
 				FuncText.append(temp);
 				asmcode.EIP = asmcode.EIP + len;
+				SigLen = SigLen + len;
 				continue;
 			}
 			else if (asmcode.Instruction.BranchType == 13 && asmcode.EIP >= MaxAddr) {
@@ -438,6 +460,7 @@ INT CCodMakeDlg::Findprocend(ULONG FuncStartAddr,string& FuncText) {   //´«Èë×Ó³
 				ReadHex(asmcode.EIP, len, temp);
 				FuncText.append(temp);
 				asmcode.EIP = asmcode.EIP + len;
+				SigLen = SigLen + len;
 				continue;
 			}
 		}
@@ -633,6 +656,7 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 
 
 	DebugMessage("Éú³ÉÍê±Ï!ÃüÁîÓÐÐ§ÊýÎª:%d",m_FuncOk.size());	
+	DebugMessage("¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª¡ª");
 
 	PMET = "*****SubFunc_End*****\r\n";
 	WriteFile(hFile, PMET.c_str(), PMET.size(), &dwWritten, NULL);
@@ -653,6 +677,126 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 
 	CloseHandle(hFile);
 		
+
+	//ÓÃÓÚÉú³ÉÔ´Âë
+	if (m_checksource.GetCheck() == 1) {
+		string ECODE;
+		ECODE.append(".×Ó³ÌÐò ×Ó³ÌÐò\r\n");
+		vector<string> m_Type;
+		PLIB_DATA_TYPE_INFO pDataTypeInfo = pLibInfo->m_pDataType;
+		ECODE.append(".¾Ö²¿±äÁ¿ ÕûÊý, ÕûÊýÐÍ\r\n");
+		ECODE.append(".¾Ö²¿±äÁ¿ ÎÄ±¾, ÎÄ±¾ÐÍ\r\n");
+		ECODE.append(".¾Ö²¿±äÁ¿ ×Ö½Ú¼¯, ×Ö½Ú¼¯\r\n");
+		ECODE.append(".¾Ö²¿±äÁ¿ ±äÌåÐÍ, ±äÌåÐÍ\r\n");
+		for (int n = 0; n < pLibInfo->m_nDataTypeCount; n++) {
+			if (pDataTypeInfo->m_nCmdCount == 0) {
+				pDataTypeInfo++; continue;
+			}
+			ECODE.append(".¾Ö²¿±äÁ¿ ");
+			ECODE.append((char*)pDataTypeInfo->m_szName);
+			ECODE.append(", ");
+			ECODE.append((char*)pDataTypeInfo->m_szName);
+			ECODE.append("\r\n");
+			pDataTypeInfo++;
+		}
+		
+		pFunc = (LPINT)pLibInfo->m_pCmdsFunc;
+		pCmd = pLibInfo->m_pBeginCmdInfo;
+		for (int i = 0; i < pLibInfo->m_nCmdCount; i++) {
+			if (*pFunc == NULL) {           //¹ýÂË¿Õº¯Êý,ÀýÈç Èç¹ûÃüÁî
+				pCmd++; pFunc++; continue;
+			}
+			if (pCmd->m_wState == 32772) { //ÎÞÐ§ÃüÁî,´ÓÒ»Ð©º¯ÊýµÄÊôÐÔÖÐ·ÖÎöµÃ³öµÄ½á¹û
+				pCmd++; pFunc++; continue;
+			}
+			if (pCmd->m_wState == 32900) { //ËÆºõÊÇÎÞÐ§µÄ¿½±´º¯Êý
+				pCmd++; pFunc++; continue;
+			}
+			if (pCmd->m_wState == 33028) { //ËÆºõÊÇÎÞÐ§µÄÎö¹¹º¯Êý
+				pCmd++; pFunc++; continue;
+			}
+			if (pCmd->m_wState == 33284) { //ËÆºõÊÇÎÞÐ§µÄ¹¹Ôìº¯Êý
+				pCmd++; pFunc++; continue;
+			}
+			ECODE.append(Named_array[i]);
+			ECODE.append("(");
+
+			PARG_INFO arg = pCmd->m_pBeginArgInfo;
+			for (int  n = 0; n < pCmd->m_nArgCount; n++)
+			{
+				if ((arg->m_dwState>>1) && 1 == 1)	//µÚ¶þÎ»ÊÇ1,´ú±í²ÎÊý¿ÉÊ¡ÂÔ
+				{
+					arg++;
+					ECODE.append(",");
+					continue;
+				}
+				DebugMessage("%s--%X--%X", pCmd->m_szName, arg->m_dtDataType, arg->m_dwState);
+				switch (arg->m_dtDataType)
+				{
+				case 0x10031:		//±äÌåÐÍ
+				{
+					ECODE.append("±äÌåÐÍ,");
+					break;
+				}
+				case 0x80000000:	//Í¨ÓÃÐÍ
+				{
+					ECODE.append("ÎÄ±¾,");
+					break;
+				}
+				case 0x80000002:   //Âß¼­ÐÍ
+				{
+					ECODE.append("Õæ,");
+					break;
+				}
+				case 0x80000004:
+				{
+					ECODE.append("ÎÄ±¾,");
+					break;
+				}
+				case 0x80000005:   //×Ö½Ú¼¯
+				{
+					ECODE.append("×Ö½Ú¼¯,");
+					break;
+				}
+				case 0x80000006:   //×Ó³ÌÐòÖ¸Õë
+				{
+					ECODE.append("&×Ó³ÌÐò,");
+					break;
+				}
+				case 0x80000301:   //ÕûÊýÐÍ
+				{
+					ECODE.append("ÕûÊý,");
+					break;
+				}
+				default:
+					//DebugMessage("%s", arg->m_szExplain);
+					break;
+				}
+				arg++;
+			}
+
+			if (ECODE[ECODE.length() - 1] == ',') {		//Ä¨³ý×îºóÒ»Î»·ûºÅ
+				ECODE.erase(ECODE.length() - 1);
+			}
+			ECODE.append(")\r\n");
+			pCmd++;
+			pFunc++;
+		}
+
+		//ÖÃÈë¼ô¼­°æ
+		HGLOBAL hClip;
+		if (OpenClipboard()) {
+			EmptyClipboard();
+			hClip = GlobalAlloc(GMEM_MOVEABLE, ECODE.length() + 1);
+			char *buff;
+			buff = (char*)GlobalLock(hClip);	//Ëø¶¨ÄÚ´æ
+			strcpy(buff, ECODE.c_str());
+			GlobalUnlock(hClip);
+			SetClipboardData(CF_TEXT, hClip);
+			CloseClipboard();
+		}
+	}
+
 	if (hLib) {
 		FreeLibrary(hLib);
 	}
@@ -663,14 +807,12 @@ void CCodMakeDlg::MakeCode(LPWSTR lpFile)
 	m_call.clear();
 }
 
-
-
 /*
 	8B 44 24 0C 50 E8 ?? ?? ?? ?? 83 C4 04 8B C8
 	68 ?? ?? ?? ?? B9 ?? ?? ?? ?? E8 ?? ?? ?? ?? C7 40 04 00 00 00 00 B9 ?? ?? ?? ??
 	8B 44 24 0C 50 E8 ?? ?? ?? ?? 8B C8 83 C4 04 83 C1 5C
 */
-	
+
 void CCodMakeDlg::OnDropFiles(HDROP hDropInfo)
 {
 	WCHAR wcStr[MAX_PATH] = { 0 };

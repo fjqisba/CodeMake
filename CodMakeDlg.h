@@ -69,4 +69,5 @@ public:
 	DWORD	SectionSize = 0;
 
 	INT IsRelocated(ULONG addr,int len);
+	CButton m_checksource;
 };
